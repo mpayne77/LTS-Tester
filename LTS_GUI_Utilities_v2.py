@@ -59,7 +59,6 @@ def move_motor(direction, resolution, num_steps):
 
     sleep(num_steps/2000 + 1)
     #motors_off()
-    print('returning from moveMotor function')
     return 1
 
 def find_home(direction):
