@@ -5,37 +5,35 @@
 Liquid thermal shock tester front end using Tkinter GUI framework.
 
 Written by: M. Payne
-Last modified: 2016-04-14
+Last modified: 2016-04-20
 
 """
 
 
 from Tkinter import Tk, Frame, Label, Button, Text, IntVar
-from Tkinter import BOTH, END, CENTER, LEFT, RIGHT, TOP, X, Y, E
+from Tkinter import BOTH, END, CENTER, LEFT, TOP
 from tkFont import Font
 import tkMessageBox
-from LTS_GUI_Utilities_v2 import *
+from LTS_GUI_Utilities_v2 import motors_off, move_motor, find_home, jog_motor
 import subprocess
 import threading
 import Queue
 import sys
 from datetime import datetime
-import multiprocessing
 
 
 class TopLevel(Frame):
 
-
     def __init__(self, parent):
         Frame.__init__(self, parent, background="gray")
         self.parent = parent
-        self.initGlobalVars()
-        self.initUI()
-        self.detectDebugMode()
+        self.init_global_vars()
+        self.init_UI()
+        self.detect_debug_mode()
         self.set_state_stopped()
 
 
-    def initGlobalVars(self):
+    def init_global_vars(self):
         self.switch_status = 'none'
         self.home_result = IntVar()
         self.move_result = IntVar()
@@ -56,7 +54,7 @@ class TopLevel(Frame):
         self.up_full_steps = 3200
         self.right_full_steps = 7200
         
-        self.debugMode = False
+        self.debug_mode = False
         
         self.event_schedule = []
         
@@ -68,7 +66,7 @@ class TopLevel(Frame):
         self.planned_steps = 0
 
 
-    def initUI(self):
+    def init_UI(self):
 
         self.parent.title('Liquid Thermal Shock Tester v0.2')
         self.pack(fill=BOTH, expand=True)
@@ -224,19 +222,6 @@ class TopLevel(Frame):
                                    command=self.shutdown, height=2)
         self.power_button.pack(side=TOP, fill=BOTH, padx=5, pady=5)
 
-        # # Create status variables
-        # self.switch_status = 'none'
-        # self.home_result = IntVar()
-        # self.move_result = IntVar()
-        # self.timer_active = IntVar()
-        # self.test_active = False
-
-        # self.timer = [0, 0]
-        # self.timer_reset_val = [0, 0]
-
-        # self.active_cycle = 0
-        # self.active_temp = 'foo'
-
 
     def fix_grid(self, target_frame):
         [columns, rows] = target_frame.grid_size()
@@ -246,14 +231,14 @@ class TopLevel(Frame):
             target_frame.columnconfigure(j, weight=1)
 
 
-    def detectDebugMode(self):
+    def detect_debug_mode(self):
         if str(sys.argv[0]) == 'debug':
             self.update_status('Tester is in debug mode.', 'newline')
             self.update_status('', 'newline')
             self.update_status('The tester will run with a 6 second', 'newline')
             self.update_status('  soak time regardless of the soak', 'newline')
             self.update_status('  time selected in the GUI.', 'newline')
-            self.debugMode = True
+            self.debug_mode = True
         else:
             self.update_status('Welcome to the Liquid Thermal Shock', 'newline')
             self.update_status('  Tester. Select the number of', 'newline')
@@ -262,7 +247,7 @@ class TopLevel(Frame):
             self.update_status('  that the limit switches are free', 'newline')
             self.update_status('  from obstructions prior to running', 'newline')
             self.update_status('  a test.', 'newline')            
-            self.debugMode = False
+            self.debug_mode = False
 
 
     def cycles_increment(self):
@@ -319,7 +304,7 @@ class TopLevel(Frame):
 
         str_soak_time = self.soak_time_disp.cget('text')
 
-        if self.debugMode:
+        if self.debug_mode:
             self.timer = [0, 6]
         else:
             self.timer = [int(str_soak_time), 0]
@@ -331,7 +316,7 @@ class TopLevel(Frame):
 
     # Callback functions for manual motor jog
     def jog_off(self, event):
-        motorsOff()
+        motors_off()
 
     def jog_up_on(self, event):
         jog_motor('up')
@@ -348,7 +333,7 @@ class TopLevel(Frame):
 
     # Shuts down the tester
     def shutdown(self):
-        motorsOff()
+        motors_off()
         confirm_string = "Do you really want to power down the tester?"
         confirm = tkMessageBox.askokcancel("Shutdown", confirm_string)
         if confirm:
@@ -376,23 +361,14 @@ class TopLevel(Frame):
                                     'Direction': direction,
                                     'Steps': steps,
                                     'Duration': duration})
-
-
-    def start_homing_move(self, direction):
-        print('Hello!')        
-        self.queue.put_nowait(findHome(direction))  
         
 
-    def find_home(self, direction):
+    def start_homing_move(self, direction):
         self.update_status('Finding ' + direction + ' home position...', 'newline')
         self.status_disp.update()
         self.home_result.set(0)
-        self.queue = Queue.Queue()
-        #self.queue = multiprocessing.Queue()        
+        self.queue = Queue.Queue()      
         Find_Home_Nonblocking(self.queue, direction).start()
-        
-#        self.homing_proc = Find_Home_Nonblocking(self.queue, direction)
-#        self.homing_proc.run()
         
         self.master.after(100, self.process_homing_queue)
         self.wait_variable(self.home_result)
@@ -404,8 +380,10 @@ class TopLevel(Frame):
 
 
     def run_init(self):
-        """ Run button callback.  Collects run parameters, creates event
-            schedule, then runs the series of scheduled events
+        """ Run button callback.  
+        
+            Collects run parameters, creates event schedule, then runs the 
+            series of scheduled events.
         """
         
         self.set_state_running()
@@ -421,7 +399,7 @@ class TopLevel(Frame):
         
         # Get the soak time in minutes. This is forced to 0.1 minutes when
         # the GUI is launched in debug mode
-        if self.debugMode:
+        if self.debug_mode:
             soak_time_str = '0.1'
             soak_time_float = 0.1
         else:
@@ -461,25 +439,19 @@ class TopLevel(Frame):
         self.update_status(out_string, 'newline')
 
         if self.test_active == True:
-            self.find_home('up')
+            self.start_homing_move('up')
         if self.test_active == True:
-            self.find_home('right')
+            self.start_homing_move('right')
 
         self.update_status('Moving to hot position...', 'newline')
         self.run_scheduled_events()
 
 
     def run_scheduled_events(self):
-        
-        #total_cycles = int(self.cycles_select_disp.cget('text'))
 
         if self.test_active == True:
             
             current_event = self.event_schedule.pop(0)
-#            print('Running scheduled event: ')
-#            print(current_event)
-            #print(current_event)
-            #raw_input('breakpoint, enter to continue:')
 
             if current_event['Event type'] == 'soak':
                 self.set_state_running()
@@ -492,8 +464,6 @@ class TopLevel(Frame):
 
             elif current_event['Event type'] == 'move':
 
-                # Output status message if initiating a move to the next
-                # soak position (i.e. when the move direction is 'up')
                 if current_event['Direction'] == 'up':
                     self.set_state_running()
                     if current_event['Destination'] == 'complete':
@@ -514,28 +484,22 @@ class TopLevel(Frame):
                     self.move_total_duration = current_event['Duration']
                     self.planned_steps = current_event['Steps']
 
-#                    print('Move planned duration: ')
-#                    print(self.move_total_duration)
-#                    print('Move planned steps: ')
-#                    print(self.planned_steps)
-
-                # Move motor (wrap this in the 'if' statement below to skip the 
-                # up & down moves)
-                #if current_event['Direction'] == 'right' or current_event['Direction'] == 'left':
                 self.move_result.set(0)
                 self.queue = Queue.Queue()
-#                print('Move start timestamp: ')
                 self.move_started_time = datetime.now()
-#                print(self.move_started_time)
                 Move_Motor_Nonblocking(self.queue, current_event['Direction'],
                                        self.move_motor_resolution,
                                        current_event['Steps']).start()
                 self.master.after(100, self.process_move_queue)
                 self.wait_variable(self.move_result)
-                motorsOff()
+                motors_off()
                 
         # If there are any events left in the schedule, run the next scheduled
-        # event.  Otherwise, show 'test complete' message.
+        # event.  If there are no events left in the schedule and the last event
+        # was a completed move, then the test is complete and this function should
+        # output the 'test complete' message.  If there are no events in the schedule 
+        # and the last event was not a completed move, then the test is paused and 
+        # this function should do nothing else.
         if self.event_schedule:
             self.after(1000, self.run_scheduled_events)
         elif self.move_result.get() == 1:
@@ -543,6 +507,7 @@ class TopLevel(Frame):
             self.set_state_stopped()
         else:
             pass
+
 
     def set_state_running(self):
         """ Deactivates cycle time select, soak time select, motor jog
@@ -552,6 +517,7 @@ class TopLevel(Frame):
             running test, which could result in some difficult to handle
             undefined states.
         """
+        
         self.cycles_increase_button.config(state='disabled')
         self.cycles_decrease_button.config(state='disabled')
         self.soak_time_increment_button.config(state='disabled')
@@ -565,8 +531,8 @@ class TopLevel(Frame):
         self.pause_button.config(state='disabled')
 
         # This is absurd, but apparently setting a button to 'disabled' does
-        # not actually disable the button event bindings, so all this crap
-        # below is necessary.
+        # not actually disable the button event bindings, so binding the buttons
+        # to a 'do_nothing()' function is required.
         self.jog_up_button.bind("<Button-1>", self.do_nothing)
         self.jog_up_button.bind("<ButtonRelease-1>", self.do_nothing)
         self.jog_down_button.bind("<Button-1>", self.do_nothing)
@@ -614,6 +580,7 @@ class TopLevel(Frame):
             button event bindings are not disabled when a button's state is
             set to 'disabled'.
         """
+        
         pass
 
     
@@ -685,7 +652,7 @@ class TopLevel(Frame):
 
         # Clear event schedule and toggle home and move result monitoring
         # variables. This helps prevent errors on restart
-        motorsOff()        
+        motors_off()        
         self.event_schedule = []
         self.home_result.set(0)
         self.move_result.set(0)
@@ -711,18 +678,13 @@ class TopLevel(Frame):
             
     
     def pause_test(self):
-        motorsOff()
+        motors_off()
         self.pause_time = datetime.now()
-#        print('Pause pressed timestamp:')
         
         self.pause_button.config(text='RESUME', background='green',
                                  activebackground='green')
         
-#        print(self.pause_time)
         self.resume_schedule = self.event_schedule
-        #print('Planned resume schedule: ')
-        #for i in self.resume_schedule:
-        #    print(i)
         
         self.event_schedule = []        
         self.move_result.set(0)
@@ -730,20 +692,12 @@ class TopLevel(Frame):
         pause_delta_seconds = float(pause_delta.seconds)
         pause_delta_seconds += pause_delta.microseconds/1000000.0
 
-#        print('Move time before pause: ')
-#        print(pause_delta_seconds)
-
         steps_prepause = int(pause_delta_seconds*2000)
-#        print('Steps before pause: ')
-#        print(steps_prepause)
-        
+
         steps_remaining = self.planned_steps - steps_prepause
-#        print('Steps remaining: ')
-#        print(steps_remaining)
-                
+
         
         move_time_remaining = self.move_total_duration - pause_delta_seconds
-        # steps_remaining = int(move_time_remaining*2000)
         
         resume_event = {'Cycle': '',
                         'Event type': 'move',
@@ -756,34 +710,19 @@ class TopLevel(Frame):
         
         self.update_status('', 'newline')
         self.pause_timer()
-        
-        #print('Resume schedule: ')
-        #for i in self.resume_schedule:
-        #    print(i)
 
         
     def resume_test(self):
         self.pause_button.config(text='PAUSE', background='orange',
                                  activebackground='orange')
         self.resume_time = datetime.now()
-#        print('Resume pressed:')
-#        print(self.resume_time)
+
         self.event_schedule = self.resume_schedule
         
         pause_duration = self.resume_time - self.pause_time
-#        print('Pause duration:')
+
         pause_duration_seconds = float(pause_duration.seconds)
         pause_duration_seconds += pause_duration.microseconds/1000000.0
-#        print(str(pause_duration_seconds))
-        
-#        print('New event schedule: ')
-#        for i in self.event_schedule:
-#            print(i)
-        
-#        timer_string = '{0:1d}:{1:02d}'.format(self.timer[0],
-#                                               self.timer[1])
-#        out_string = 'Test resumed after ' + timer_string + '.'
-        
         
         self.test_active = True
         self.update_status('Test resumed.', 'newline')
@@ -820,17 +759,13 @@ class TopLevel(Frame):
             self.master.after(100, self.process_move_queue)
         
 
-
-
 # The motor moves use the built in sleep function and will therefore lock the
 # GUI if they are not spawned in separate threads. This is the only way I could
 # figure out to move the motors while still allowing the 'STOP' button to be
 # active. The homing and motor move functions return values to the queue, which
 # can be checked in the main 'run_test' thread to see if the motor move has
 # finished. This allows the (unlocked) GUI to pause and wait for either motor
-# move completion or the user pressing the stop button. The interaction between
-# threads is still a bit over my head, but it seems to be doing what I want it
-# to.
+# move completion or the user pressing the stop button.
 
 class Find_Home_Nonblocking(threading.Thread):
     def __init__(self, queue, direction):
@@ -838,7 +773,7 @@ class Find_Home_Nonblocking(threading.Thread):
         self.queue = queue
         self.direction = direction
     def run(self):
-        self.queue.put(findHome(self.direction))
+        self.queue.put(find_home(self.direction))
 
 
 class Move_Motor_Nonblocking(threading.Thread):
@@ -848,11 +783,9 @@ class Move_Motor_Nonblocking(threading.Thread):
         self.direction = direction
         self.resolution = resolution
         self.num_steps = num_steps
+    
     def run(self):
-        #print('Move start timestamp: ')
-        #self.move_started_time = datetime.now()
-        #print(self.move_started_time)
-        self.queue.put(moveMotor(self.direction, self.resolution,
+        self.queue.put(move_motor(self.direction, self.resolution,
                                  self.num_steps))
 
 
