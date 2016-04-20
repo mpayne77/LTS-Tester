@@ -82,11 +82,6 @@ class TopLevel(Frame):
 
         cycles_frame = Frame(options_frame, background='gray', pady=5)
         cycles_frame.pack(side=TOP, fill=BOTH, expand=True)
-        cycles_frame.columnconfigure(0, weight=1)
-        cycles_frame.columnconfigure(1, weight=1)
-        cycles_frame.rowconfigure(0, weight=1)
-        cycles_frame.rowconfigure(1, weight=1)
-        cycles_frame.rowconfigure(2, weight=1)
 
         cycles_label = Label(cycles_frame, text='# of cycles', background='gray',
                              font=('Courier', 12), justify=CENTER)
@@ -111,7 +106,7 @@ class TopLevel(Frame):
                                              command=self.cycles_decrement)
         self.cycles_decrease_button.grid(row=2, column=1, rowspan=1, columnspan=1,
                                          sticky='wens', padx=5, pady=5)
-
+                                         
         self.fix_grid(cycles_frame)
 
         soak_time_frame = Frame(options_frame, background='gray', pady=5)
@@ -138,7 +133,7 @@ class TopLevel(Frame):
                                                 command=self.soak_time_decrement)
         self.soak_time_decrement_button.grid(row=2, column=1, rowspan=1, columnspan=1,
                                             sticky='wens', padx=5, pady=5)
-
+                                            
         self.fix_grid(soak_time_frame)
 
         controls_frame = Frame(self, background='gray')
@@ -158,6 +153,7 @@ class TopLevel(Frame):
                             font=('Courier', 30, 'bold'), width=5,
                             command=self.pause_button_pressed)
         self.pause_button.grid(row=0, column=1, sticky='wens', padx=5, pady=5)
+        
         self.fix_grid(run_pause_frame)
 
         stop_button = Button(controls_frame, text='STOP', background='red',
@@ -331,8 +327,9 @@ class TopLevel(Frame):
         jog_motor('right')
 
 
-    # Shuts down the tester
     def shutdown(self):
+        """ Shuts down the tester. """
+        
         motors_off()
         confirm_string = "Do you really want to power down the tester?"
         confirm = tkMessageBox.askokcancel("Shutdown", confirm_string)
@@ -342,12 +339,11 @@ class TopLevel(Frame):
             pass
 
 
-    # Updates the test status window
     def update_status(self, new_text, writemode):
+        """ Prints text to the tester status window. """
+        
         self.status_disp.configure(state='normal')
         if writemode == 'overwrite':
-            #self.status_disp.mark_set('insert', 'end')
-            #self.status_disp.delete('current linestart', 'current lineend')
             self.status_disp.delete('end-1c linestart', 'end')
         self.status_disp.insert('end', '\n' + new_text)
         self.status_disp.see(END)
@@ -355,6 +351,8 @@ class TopLevel(Frame):
 
 
     def append_event(self, cycle, type, destination, direction, steps, duration):
+        """ Add new event (motor move or temperature soak) to event schedule. """
+        
         self.event_schedule.append({'Cycle': cycle,
                                     'Event type': type,
                                     'Destination': destination,
@@ -364,14 +362,16 @@ class TopLevel(Frame):
         
 
     def start_homing_move(self, direction):
+        """ Starts the homing procedure in the given direction. """
+        
         self.update_status('Finding ' + direction + ' home position...', 'newline')
         self.status_disp.update()
         self.home_result.set(0)
         self.queue = Queue.Queue()      
         Find_Home_Nonblocking(self.queue, direction).start()
-        
         self.master.after(100, self.process_homing_queue)
         self.wait_variable(self.home_result)
+        
         if self.home_result.get() == 0:
             self.update_status('Homing error. Test aborted.', 'newline')
             return
@@ -406,8 +406,8 @@ class TopLevel(Frame):
             soak_time_str = self.soak_time_disp.cget('text')
             soak_time_float = float(soak_time_str)
         
+        # Build event schedule
         self.event_schedule = []
-
         for i in range(1, total_cycles_int+1):
             self.append_event(i, 'move', 'hot', 'down', up_steps, up_steps/2000.0)
             self.append_event(i, 'soak', 'hot', '', '', soak_time_float)
@@ -418,6 +418,9 @@ class TopLevel(Frame):
             self.append_event(i, 'move', 'hot', 'up', up_steps, up_steps/2000.0)
             self.append_event(i, 'move', 'hot', 'right', right_steps, right_steps/2000.0)
 
+        # Set the destination to 'complete' for the final 'up' and 'right' moves.
+        # Edit the 'Steps' parameter of the final move to end the test in the 
+        # center of the rail.
         self.event_schedule[-2]['Destination'] = 'complete'
         self.event_schedule[-1]['Destination'] = 'complete'
         self.event_schedule[-1]['Steps'] = right_steps/2
@@ -440,15 +443,17 @@ class TopLevel(Frame):
 
         if self.test_active == True:
             self.start_homing_move('up')
-        if self.test_active == True:
+        if self.test_active == True and self.home_result.get() == 1:
             self.start_homing_move('right')
 
-        self.update_status('Moving to hot position...', 'newline')
-        self.run_scheduled_events()
+        if self.test_active == True and self.home_result.get() == 1:
+          self.update_status('Moving to hot position...', 'newline')
+          self.run_scheduled_events()
 
 
     def run_scheduled_events(self):
-
+        """ Runs the series of events listed in self.event_schedule. """
+        
         if self.test_active == True:
             
             current_event = self.event_schedule.pop(0)
@@ -484,7 +489,7 @@ class TopLevel(Frame):
                     self.move_total_duration = current_event['Duration']
                     self.planned_steps = current_event['Steps']
 
-                self.move_result.set(0)
+                #self.move_result.set(0)
                 self.queue = Queue.Queue()
                 self.move_started_time = datetime.now()
                 Move_Motor_Nonblocking(self.queue, current_event['Direction'],
@@ -652,13 +657,16 @@ class TopLevel(Frame):
 
         # Clear event schedule and toggle home and move result monitoring
         # variables. This helps prevent errors on restart
-        motors_off()        
+        motors_off()
+                
         self.event_schedule = []
         self.home_result.set(0)
         self.move_result.set(0)
         
         if self.test_active:
             self.update_status('Test stopped by user.', 'newline')
+
+        self.test_active = False
 
         # Stop and reset timer, reactivate buttons (in case the test
         # needs to be restarted).
@@ -667,7 +675,9 @@ class TopLevel(Frame):
         self.set_state_stopped()
 
 
-    def pause_button_pressed(self):        
+    def pause_button_pressed(self):
+        """ Pause button callback. """
+                
         if self.test_paused:
             self.test_paused = False            
             self.resume_test()
@@ -678,6 +688,8 @@ class TopLevel(Frame):
             
     
     def pause_test(self):
+        """ Pauses a running test """
+        
         motors_off()
         self.pause_time = datetime.now()
         
@@ -713,6 +725,8 @@ class TopLevel(Frame):
 
         
     def resume_test(self):
+        """ Resumes a paused test """
+        
         self.pause_button.config(text='PAUSE', background='orange',
                                  activebackground='orange')
         self.resume_time = datetime.now()
@@ -737,8 +751,7 @@ class TopLevel(Frame):
         # active. In this case, the function recursively calls itself after
         # 100ms. If there is something in the queue, the value is read into
         # the self.home_result variable and the function is not called again.
-        try:
-            ('Reading queue')            
+        try:            
             self.home_result.set(self.queue.get(0))
         except Queue.Empty:
             self.master.after(10, self.process_homing_queue)
